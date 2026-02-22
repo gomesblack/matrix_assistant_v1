@@ -1,13 +1,32 @@
 from __future__ import annotations
 
 import os
+import sys
 import json
-import time
 from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
 
+# ============================================================
+# Boot: permitir rodar pela RAIZ
+# Repo root/
+#   app.py  <-- este arquivo
+#   matrix_assistant_v1/
+#       core/
+#       tools/
+#       tests/
+#       ...
+# ============================================================
+
+REPO_ROOT = Path(__file__).resolve().parent
+APP_DIR = REPO_ROOT / "matrix_assistant_v1"
+
+# Garante que "import core.xxx" resolva para matrix_assistant_v1/core
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
+# Agora esses imports funcionam rodando pela raiz
 from core.orchestrator import run_pipeline
 from core.executor import execute_commands
 from core.schemas import Patch
@@ -17,7 +36,6 @@ from core.metrics import compute_sfc
 load_dotenv()
 
 st.set_page_config(page_title="Matrix Assistant", page_icon="🟢", layout="wide")
-
 
 # -----------------------------
 # Base visual (Matrix)
@@ -110,7 +128,6 @@ draw();
 </script>
 """
 
-
 # -----------------------------
 # Util: carregar assets do modo ARGente (sem quebrar se não existirem)
 # -----------------------------
@@ -126,13 +143,13 @@ def _read_text_if_exists(path: Path) -> str | None:
 def apply_argente_assets(enabled: bool) -> None:
     """
     Se enabled=True, tenta carregar:
-      ui_modes/argente/argente.css  (injetado via st.markdown)
-      ui_modes/argente/argente.html (injetado via st.components.v1.html)
+      matrix_assistant_v1/ui_modes/argente/argente.css  (injetado via st.markdown)
+      matrix_assistant_v1/ui_modes/argente/argente.html (injetado via st.components.v1.html)
     """
     if not enabled:
         return
 
-    base = Path(__file__).parent / "ui_modes" / "argente"
+    base = APP_DIR / "ui_modes" / "argente"
     css = _read_text_if_exists(base / "argente.css")
     html = _read_text_if_exists(base / "argente.html")
 
@@ -140,7 +157,6 @@ def apply_argente_assets(enabled: bool) -> None:
         st.markdown(f"<style>\n{css}\n</style>", unsafe_allow_html=True)
 
     if html:
-        # height=0 se for só script/efeitos; se tiver UI, aumente.
         st.components.v1.html(html, height=0)
 
 
@@ -154,7 +170,6 @@ st.components.v1.html(MATRIX_CANVAS, height=0)
 with st.sidebar:
     st.title("🟢 Matrix Control")
 
-    # Toggle do modo ARGente (prepara terreno pra efeitos e assets externos)
     argente_mode = st.checkbox("Ativar Modo ARGente (UI/efeitos)", value=False)
 
     base_url = st.text_input("LLM_BASE_URL", value=os.getenv("LLM_BASE_URL", ""))
@@ -174,7 +189,6 @@ with st.sidebar:
     db_path = os.path.join(workspace_root, "matrix_assistant.db")
     st.caption(f"DB: {db_path}")
 
-# aplica assets do ARGente (se existir)
 apply_argente_assets(argente_mode)
 
 st.title("Matrix Assistant — Orquestrador + Executor (V1)")
@@ -186,7 +200,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# init db
 os.makedirs(workspace_root, exist_ok=True)
 init_db(db_path)
 
@@ -302,7 +315,11 @@ if "last" in st.session_state:
                     to_run.extend(cmds_sudo)
 
                 with st.spinner("Executando..."):
-                    results = execute_commands(to_run, cwd=os.getcwd(), allow_sudo_exec=allow_sudo_exec)
+                    results = execute_commands(
+                        to_run,
+                        cwd=str(REPO_ROOT),
+                        allow_sudo_exec=allow_sudo_exec,
+                    )
 
                 st.subheader("Resultados")
                 st.code(
@@ -313,7 +330,6 @@ if "last" in st.session_state:
                 success = bool(results) and all((r.rc == 0 and r.expects_rc == 0) for r in results)
                 had_sudo = bool(cmds_sudo)
 
-                # métricas simples
                 SS_local = 100.0 if success else 50.0
                 IEC = 50.0
                 IRO_total = 5.0 if success else 50.0
@@ -343,4 +359,4 @@ if "last" in st.session_state:
                 )
                 st.success(f"Episódio salvo no DB. id={episode_id}")
 
-st.caption("Dica: para projetos, rode o app dentro do seu workspace para manter caminhos relativos.")
+st.caption("Dica: se você estiver na raiz, rode: streamlit run app.py")
